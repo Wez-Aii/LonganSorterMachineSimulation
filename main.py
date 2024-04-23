@@ -16,6 +16,7 @@ REDIS_PORT = int(os.getenv("REDIS_PORT"))
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
 MACHINE_ID = '123456'
+MAIN_LOOP_TIME_SEC = 3
 
 class NodeStatuses(Enum):
     READY = 0
@@ -64,15 +65,15 @@ class SorterMachineRedis:
             while True:
                 payload = self.redis_connection.lpop(r_topic)
                 if payload is not None:
-                    print(f"{r_topic} payload - {payload}")
-                    _return_payloads.append(json.loads(payload.decode()))
+                    # print(f"{r_topic} payload - {payload}")
+                    _return_payloads.append(payload.decode())
                 else:
                     break
         return _return_payloads
 
     def write_heartbeat_to_redis(self, payload: str):
         redis_topic = f"heartbeat:{self._machine_id}"
-        print(f"func write_heartbeat_to_redis: Redis_connection - {self.check_redis_connection()}")
+        # print(f"func write_heartbeat_to_redis: Redis_connection - {self.check_redis_connection()}")
         if self.check_redis_connection():
             '''write data to topic'''
             self.redis_connection.set(redis_topic, payload)
@@ -94,50 +95,6 @@ class SorterMachineRedis:
                         break
         return backup_holder
 
-    def write_local_command_to_redis(self, payload):
-        redis_topic = f"localcommand:{self._machine_id}"
-        print(f"func write_local_command_to_redis: Redis_connection - {self.check_redis_connection()}")
-        if payload is not None:
-            self._local_command_holder.append(payload)
-            '''write data to topic'''
-        print(f"func write_local_command_to_redis ({payload})")
-        pass
-    
-    def write_machine_feedback_to_redis(self, payload):
-        redis_topic = f"feedback:{self._machine_id}"
-        print(f"func write_machine_feedback_to_redis: Redis_connection - {self.check_redis_connection()}")
-        if payload is not None:
-            self._feedbacks_holder.append(payload)
-            '''write data to topic'''
-        print(f"func write_machine_feedback_to_redis ({payload})")
-        pass
-
-    def write_batch_info_to_redis(self, payload):
-        redis_topic = f"batch:{self._machine_id}"
-        print(f"func write_batch_info_to_redis: Redis_connection - {self.check_redis_connection()}")
-        if payload is not None:
-            self._batch_info_holder.append(payload)
-            '''write data to topic'''
-        print(f"func write_batch_info_to_redis ({payload})")
-        pass
-
-    def write_aggr_out_of_frame_to_redis(self, payload):
-        redis_topic = f"outofframe:{self._machine_id}"
-        print(f"func write_aggr_out_of_frame_to_redis: Redis_connection - {self.check_redis_connection()}")
-        if payload is not None:
-            self._aggr_longan_info_holder.append(payload)
-            '''write data to topic'''
-        print(f"func write_aggr_out_of_frame_to_redis ({payload})")
-        pass
-
-    def write_box_completed_count_to_redis(self, payload):
-        redis_topic = f"box:{self._machine_id}"
-        print(f"func write_box_completed_count_to_redis: Redis_connection - {self.check_redis_connection()}")
-        if payload is not None:
-            self._box_cound_info_holder.append(payload)
-            '''write data to topic'''
-        print(f"func write_box_completed_count_to_redis ({payload})")
-        pass
 
 class SorterMachineDataGenerator:
     def __init__(self) -> None:
@@ -184,7 +141,7 @@ class SorterMachineDataGenerator:
                 self._local_command_generated_time = None
                 self._local_command = 0 # set to off
                 await asyncio.sleep(1)
-                await self.end_batch(self._batch_id)
+                self.end_batch(self._batch_id)
 
     def check_error_status(self):
         _is_ros_error = NodeStatuses.ERROR.value in [self._current_ros_vision_status, self._current_ros_ejector_status]
@@ -200,6 +157,7 @@ class SorterMachineDataGenerator:
             if self._batch_id not in list(each["local_batch_id"] for each in self._batch_records):
                 '''by using list to hold the batch info, it makes sure that the latest info of the prev batch info has been send'''
                 self._batch_records.append({
+                    "payload_name": "longan_batch",
                     "machine_id": self._machine_id,
                     "local_batch_id": self._batch_id,
                     "command": self._batch_start_command,
@@ -208,7 +166,7 @@ class SorterMachineDataGenerator:
                 })
                 self._is_batch_record_updated = True
 
-    async def end_batch(self, batch_id):
+    def end_batch(self, batch_id):
         '''update the batch record according to the batch id'''
         for each in self._batch_records:
             if each["local_batch_id"] == batch_id:
@@ -216,7 +174,7 @@ class SorterMachineDataGenerator:
                 self._is_batch_record_updated = True
 
     def get_current_local_command(self) -> str:
-        return self._local_command
+        return json.dumps({"payload_name": "local_command","command": self._local_command})
 
     def generate_batch_info(self) -> str:
         if len(self._batch_records) > 0:
@@ -232,6 +190,7 @@ class SorterMachineDataGenerator:
         self._ros_vision_feedback = self.generate_ros_vision_feedback()
         self._ros_ejector_feedback = self.generate_ros_ejector_feedback()
         machine_feedback = {
+            'payload_name': 'machine_feedback',
             'plc': self._plc_feedback,
             'ros_vision': self._ros_vision_feedback,
             'ros_ejector': self._ros_ejector_feedback,
@@ -349,6 +308,7 @@ class SorterMachineDataGenerator:
             _stdv_width = randrange(20,80)/10
             return json.dumps(
                 {
+                    "payload_name": "longan_out_of_frame",
                     "machine_id": self._machine_id,
                     "local_batch_id": self._batch_id,
                     "out_of_frame_start_time": self.datetime_to_str(_out_of_frame_start_time),
@@ -377,6 +337,7 @@ class SorterMachineDataGenerator:
             _box_completed_time = datetime.now(timezone.utc)
             return json.dumps(
                 {
+                    "payload_name": "longan_box_completed",
                     "machine_id": self._machine_id,
                     "local_batch_id": self._batch_id,
                     "box_started_time": self.datetime_to_str(_box_started_time),
@@ -401,14 +362,16 @@ class SorterMachineSimulator(SorterMachineDataGenerator, SorterMachineRedis):
     def write_to_redis(self):
         if self.check_heartbeat_from_redis(str(self._cloud_redis_heartbeat)):
             self.write_heartbeat_to_redis(str(self._machine_redis_heartbeat))
-        self.write_event_stream_data_to_redis(f"feedback:{self._machine_id}", self.generate_machine_feedback(), self._machine_feedbacks_record_holder)
-        self.write_event_stream_data_to_redis(f"localCommand:{self._machine_id}", self.get_current_local_command(), self._local_commands_record_holder)
-        self.write_event_stream_data_to_redis(f"batch:{self._machine_id}", self.generate_batch_info(), self._batches_info_record_holder)
-        self.write_event_stream_data_to_redis(f"boxCount:{self._machine_id}", self.generate_out_of_frame(), self._aggr_out_of_frames_record_holder)
-        self.write_event_stream_data_to_redis(f"outOfFrame:{self._machine_id}", self.generate_box_completed_count(), self._box_counds_info_holder)
+        self.write_event_stream_data_to_redis(f"machineData:{self._machine_id}", self.generate_machine_feedback(), self._machine_feedbacks_record_holder)
+        self.write_event_stream_data_to_redis(f"machineData:{self._machine_id}", self.get_current_local_command(), self._local_commands_record_holder)
+        self.write_event_stream_data_to_redis(f"machineData:{self._machine_id}", self.generate_batch_info(), self._batches_info_record_holder)
+        self.write_event_stream_data_to_redis(f"machineData:{self._machine_id}", self.generate_out_of_frame(), self._aggr_out_of_frames_record_holder)
+        self.write_event_stream_data_to_redis(f"machineData:{self._machine_id}", self.generate_box_completed_count(), self._box_counds_info_holder)
 
     def cleanup(self):
         print("cleanup func get called.")
+        self.end_batch(self._batch_id)
+        self.write_event_stream_data_to_redis(f"machineData:{self._machine_id}", self.generate_batch_info(), self._batches_info_record_holder)
         pass
 
     @classmethod
@@ -424,7 +387,7 @@ async def main():
         while True:
             await sorter_machine_simulator.generate_local_command()
             sorter_machine_simulator.write_to_redis()
-            await asyncio.sleep(3)
+            await asyncio.sleep(MAIN_LOOP_TIME_SEC)
     except KeyboardInterrupt:
         sorter_machine_simulator.cleanup()
 
