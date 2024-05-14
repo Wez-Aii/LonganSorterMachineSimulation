@@ -15,7 +15,7 @@ REDIS_SERVER_URL = os.getenv("REDIS_SERVER_URL")
 REDIS_PORT = int(os.getenv("REDIS_PORT"))
 USERNAME = os.getenv("USERNAME")
 PASSWORD = os.getenv("PASSWORD")
-MACHINE_ID = '123456'
+MACHINE_ID = '24438388'
 MAIN_LOOP_TIME_SEC = 3
 
 class NodeStatuses(Enum):
@@ -94,7 +94,6 @@ class SorterMachineRedis:
                         print(f"func write_event_stream_data_to_redis: error occure - {e}")
                         break
         return backup_holder
-
 
 class SorterMachineDataGenerator:
     def __init__(self) -> None:
