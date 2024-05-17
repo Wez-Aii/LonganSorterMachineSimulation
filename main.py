@@ -190,6 +190,7 @@ class SorterMachineDataGenerator:
         self._ros_ejector_feedback = self.generate_ros_ejector_feedback()
         machine_feedback = {
             'payload_name': 'machine_feedback',
+            'controller_status': "controller_status",
             'plc': self._plc_feedback,
             'ros_vision': self._ros_vision_feedback,
             'ros_ejector': self._ros_ejector_feedback,
