@@ -1,6 +1,8 @@
 import asyncio
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 import json
+import logging
 import random
 import time
 import redis
@@ -78,6 +80,86 @@ async def main():
     except KeyboardInterrupt:
         rc_instance.cleanup()
 
+DATETIME_STR_FORMAT = "%Y-%m-%dT%H:%M:%S.%f%z"
+
+def datetime_to_str(dt_object: datetime) -> str:
+    _str_format = DATETIME_STR_FORMAT
+    _str_dt = None
+    try:
+        _str_dt = dt_object.strftime(_str_format)
+    except Exception as e:
+        logging.error(f"(f)datetime_to_str - {e}")
+    return _str_dt
+
+def str_to_datetime(str_dt) -> datetime:
+    _str_format = DATETIME_STR_FORMAT
+    _dt_str = None
+    try:
+        _dt_str = datetime.strptime(str_dt, _str_format)
+    except Exception as e:
+        logging.error(f"(f)str_to_datetime - {e}")
+    return _dt_str
+
+class ManualCloudRedisDataGenerator(SorterMachineRedis):
+    def __init__(self, redis_server_url: str, redis_port:int, username: str, password: str, db:int=0) -> None:
+        super().__init__(redis_server_url, redis_port, username, password)
+        self._machine_id = "24438388"
+
+    def controller_disable(self):
+        _topic = f"controllerDisable:{self._machine_id}"
+        _payload = str(False)
+        if self.check_redis_connection():
+            _current_val = self.redis_connection.get(_topic)
+            _current_val = eval(_current_val.decode()) if _current_val is not None else None
+            print(f"{_topic} current value - {_current_val}")
+            self.redis_connection.set(_topic, _payload)
+            print(f"{_topic} value set - {_payload}")
+            _updated_val = self.redis_connection.get(_topic)
+            _updated_val = eval(_updated_val.decode()) if _updated_val is not None else None
+            print(f"{_topic} updated value - {_updated_val}")
+
+    def machine_config(self):
+        _topic = f"machineConfig:{self._machine_id}"
+        _payload = {}
+        self.write_event_stream_data_to_redis()
+
+    def remote_session(self):
+        _session_token = "12e0d9b2-9dea-4b07-bc52-8156f681c372"
+        # _session_token = None
+        _topic = f"machineRemoteSession:{self._machine_id}"
+        _payload = json.dumps({
+            "remote_session_token": _session_token,
+            "session_request_at": datetime_to_str(datetime.now(timezone.utc)),
+            "session_request_minute": 25,
+            "remote_user_role": "technician",
+            "end_session": False
+        })
+        self.write_event_stream_data_to_redis(_topic, _payload)
+
+    def cloud_command(self):
+        _session_token = "12e0d9b2-9dea-4b07-bc52-8156f681c372"
+        _topic = f"cloudCommand:{self._machine_id}:{_session_token}"
+        _payload = json.dumps({
+            "remote_session_token": _session_token,
+            "command_code": "20",
+            "user_role": "technician",
+            "config": None,
+            "commanded_at": datetime_to_str(datetime.now(timezone.utc))
+        })
+        self.write_event_stream_data_to_redis(_topic, _payload)
+    
+    def machine_data(self):
+        _topic = "machineData"
+        _current_available_data = self.read_redis_payloads(_topic)
+        print(f"{_topic} current available data ...")
+        for _each in _current_available_data:
+            print(_each)
+
 
 if __name__=="__main__":
-    asyncio.run(main())
+    # asyncio.run(main())
+    _instance = ManualCloudRedisDataGenerator(redis_server_url=REDIS_SERVER_URL, redis_port=REDIS_PORT, username=USERNAME, password=PASSWORD)
+    # _instance.controller_disable()
+    _instance.remote_session()
+    _instance.cloud_command()
+    # _instance.machine_data()

@@ -18,6 +18,8 @@ PASSWORD = os.getenv("PASSWORD")
 MACHINE_ID = '24438388'
 MAIN_LOOP_TIME_SEC = 3
 
+REDIS_SOCKET_TIMEOUT = int(os.getenv("REDIS_SOCKET_TIMEOUT", "3"))
+
 class NodeStatuses(Enum):
     READY = 0
     PLAYING = 1
@@ -39,7 +41,7 @@ class SorterMachineRedis:
         self._password = password
         self._db = db
         self._machine_id = MACHINE_ID
-        self.redis_connection = redis.Redis(host=self._redis_server_url,port=self._redis_port,username=self._username,password=self._password,db=self._db)
+        self.redis_connection = redis.Redis(host=self._redis_server_url,port=self._redis_port,username=self._username,password=self._password,db=self._db,socket_timeout=REDIS_SOCKET_TIMEOUT)
         self._machine_redis_heartbeat = 1
         self._cloud_redis_heartbeat = 0
 
@@ -50,7 +52,12 @@ class SorterMachineRedis:
         self._aggr_longan_info_holder = []
 
     def check_redis_connection(self) -> bool:
-        return self.redis_connection.ping()
+        try:
+            _result = self.redis_connection.ping()
+            return _result
+        except Exception as e:
+            print(f"Error occur - {e}")
+            return False
     
     def check_heartbeat_from_redis(self, _reading_heartbeat_value: str) -> str:
         redis_topic = f"heartbeat:{self._machine_id}"
