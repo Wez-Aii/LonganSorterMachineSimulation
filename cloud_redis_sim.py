@@ -9,6 +9,38 @@ import redis
 import os
 
 from main import PASSWORD, REDIS_PORT, REDIS_SERVER_URL, USERNAME, SorterMachineRedis
+from cryptography.fernet import Fernet
+import base64
+
+
+def generate_key_from_string(custom_string):
+    """
+    Generate a Fernet key from a custom string.
+    The custom string is hashed to ensure it's 32 bytes long.
+    """
+    custom_string_bytes = custom_string.encode('utf-8')
+    # Pad or truncate the custom string to ensure it's 32 bytes long
+    custom_string_bytes = custom_string_bytes.ljust(32, b'\0')[:32]
+    return base64.urlsafe_b64encode(custom_string_bytes)
+
+def encrypt_dict(data_dict, custom_key):
+    """
+    Encrypt a dictionary using a custom key.
+    """
+    key = generate_key_from_string(custom_key)
+    fernet = Fernet(key)
+    json_data = json.dumps(data_dict).encode('utf-8')
+    encrypted_data = fernet.encrypt(json_data)
+    return encrypted_data
+
+def decrypt_dict(encrypted_data, custom_key):
+    """
+    Decrypt a dictionary using a custom key.
+    """
+    key = generate_key_from_string(custom_key)
+    fernet = Fernet(key)
+    decrypted_data = fernet.decrypt(encrypted_data)
+    return json.loads(decrypted_data.decode('utf-8'))
 
 
 def print_completed_batch_info(machine_data:dict={}):
@@ -103,7 +135,7 @@ def str_to_datetime(str_dt) -> datetime:
 class ManualCloudRedisDataGenerator(SorterMachineRedis):
     def __init__(self, redis_server_url: str, redis_port:int, username: str, password: str, db:int=0) -> None:
         super().__init__(redis_server_url, redis_port, username, password)
-        self._machine_id = "24438388"
+        self._machine_id = "24438387"
 
     def controller_disable(self):
         _topic = f"controllerDisable:{self._machine_id}"
@@ -138,15 +170,16 @@ class ManualCloudRedisDataGenerator(SorterMachineRedis):
 
     def cloud_command(self):
         _session_token = "12e0d9b2-9dea-4b07-bc52-8156f681c372"
-        _topic = f"cloudCommand:{self._machine_id}:{_session_token}"
-        _payload = json.dumps({
-            "remote_session_token": _session_token,
-            "command_code": "20",
+        _topic = f"cloudCommand:{self._machine_id}"
+        _payload = {
+            # "remote_session_token": _session_token,
+            "command_code": "10",
             "user_role": "technician",
             "config": None,
             "commanded_at": datetime_to_str(datetime.now(timezone.utc))
-        })
-        self.write_event_stream_data_to_redis(_topic, _payload)
+        }
+        encrypted_value = encrypt_dict(_payload, self._machine_id)
+        self.write_event_stream_data_to_redis(_topic, encrypted_value)
     
     def machine_data(self):
         _topic = "machineData"
@@ -160,6 +193,6 @@ if __name__=="__main__":
     # asyncio.run(main())
     _instance = ManualCloudRedisDataGenerator(redis_server_url=REDIS_SERVER_URL, redis_port=REDIS_PORT, username=USERNAME, password=PASSWORD)
     # _instance.controller_disable()
-    _instance.remote_session()
+    # _instance.remote_session()
     _instance.cloud_command()
-    # _instance.machine_data()
+    _instance.machine_data()
